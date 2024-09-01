@@ -1,0 +1,32 @@
+name: Run Stock Analysis
+
+on:
+  schedule:
+    - cron: '0 18 * * *' # Daily at midnight UTC
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.8' # or any other version you prefer
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install python-dotenv
+
+    - name: Run stock analysis
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_REPO: ${{ secrets.GITHUB_REPO }}
+        BRANCH_NAME: ${{ secrets.BRANCH_NAME }}
+      run: |
+        python your_script.py
