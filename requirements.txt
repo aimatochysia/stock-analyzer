@@ -1,0 +1,7 @@
+requests
+beautifulsoup4
+pandas
+yfinance
+GitPython
+python-dotenv
+openpyxl
