@@ -2,7 +2,7 @@ name: Run Stock Analysis
 
 on:
   schedule:
-    - cron: '0 18 * * *' # Daily at midnight UTC
+    - cron: '0 18 * * *'
   workflow_dispatch:
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v3
       with:
-        python-version: '3.8' # or any other version you prefer
+        python-version: '3.12'
 
     - name: Install dependencies
       run: |
@@ -25,8 +25,8 @@ jobs:
 
     - name: Run stock analysis
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GITHUB_REPO: ${{ secrets.GITHUB_REPO }}
-        BRANCH_NAME: ${{ secrets.BRANCH_NAME }}
+        _GITHUB_TOKEN: ${{ secrets._GITHUB_TOKEN }}
+        _GITHUB_REPO: ${{ secrets._GITHUB_REPO }}
+        _BRANCH_NAME: ${{ secrets._BRANCH_NAME }}
       run: |
-        python your_script.py
+        python main.py
