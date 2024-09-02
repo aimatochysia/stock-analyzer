@@ -45,10 +45,11 @@ load_dotenv()
 GITHUB_REPO = os.getenv('_GITHUB_REPO')
 GITHUB_TOKEN = os.getenv('_GITHUB_TOKEN')
 BRANCH_NAME = os.getenv('_BRANCH_NAME')
-TEMP_DIR = '/results'
+TEMP_DIR = os.path.join(os.getcwd(), 'repo')  
 if not os.path.exists(TEMP_DIR):
-    Repo.clone_from(f'https://github.com/{GITHUB_REPO}.git', TEMP_DIR, branch=BRANCH_NAME)
-repo = Repo(TEMP_DIR)
+    repo = Repo.clone_from(f'https://{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git', TEMP_DIR, branch=BRANCH_NAME)
+else:
+    repo = Repo(TEMP_DIR)
 
 def push_to_github(filename, content):
     """ Push a file to GitHub repository. """
