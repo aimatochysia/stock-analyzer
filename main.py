@@ -4,19 +4,17 @@ from datetime import datetime, timedelta
 import yfinance as yf
 import os
 import pandas as pd
-from datetime import datetime
 import math as m
 from git import Repo
 from dotenv import load_dotenv
-
 
 def load_stock_symbols(filename='stocklist.xlsx'):
     df = pd.read_excel(filename, usecols=[1])  
     stock_symbols = df.iloc[1:].dropna().squeeze().tolist()  
     return stock_symbols
 
-
 all_values = load_stock_symbols()
+
 def scrape_data(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.text, 'html.parser')
@@ -34,26 +32,31 @@ def scrape_data(url):
                     prev_value = current_value
     return values
 
-
 stocks = [item + ".JK" for item in all_values]
 stock = yf.Ticker("BBCA.JK")
 historical_data = stock.history(period='1d')
 last_entry_datetime = historical_data.index[-1].strftime("%Y-%m-%d")
 current_date = last_entry_datetime
 print(current_date)
+
 load_dotenv()
 GITHUB_REPO = os.getenv('_GITHUB_REPO')
 GITHUB_TOKEN = os.getenv('_GITHUB_TOKEN')
 BRANCH_NAME = os.getenv('_BRANCH_NAME')
-TEMP_DIR = os.path.join(os.getcwd(), 'repo')  
-if not os.path.exists(TEMP_DIR):
-    repo = Repo.clone_from(f'https://{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git', TEMP_DIR, branch=BRANCH_NAME)
+
+
+STOCK_RESULTS_DIR = os.path.join(os.getcwd(), 'repo', 'stockresults')  
+if not os.path.exists(STOCK_RESULTS_DIR):
+    os.makedirs(STOCK_RESULTS_DIR)
+
+if not os.path.exists(os.path.join(os.getcwd(), 'repo')):
+    repo = Repo.clone_from(f'https://{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git', os.path.join(os.getcwd(), 'repo'), branch=BRANCH_NAME)
 else:
-    repo = Repo(TEMP_DIR)
+    repo = Repo(os.path.join(os.getcwd(), 'repo'))
 
 def push_to_github(filename, content):
     """ Push a file to GitHub repository. """
-    file_path = os.path.join(TEMP_DIR, filename)
+    file_path = os.path.join(STOCK_RESULTS_DIR, filename)
     with open(file_path, 'w') as file:
         file.write(content)
 
@@ -62,21 +65,25 @@ def push_to_github(filename, content):
     origin = repo.remote(name='origin')
     origin.push()
 
-def create_excel_and_debug_files():
+def create_csv_and_debug_files():
     """ Create the necessary files and push them to GitHub. """
     current_date = datetime.now().strftime("%d-%m-%Y")
-    excel_filename = f"stock_data_{current_date}.xlsx"
+    csv_filename = f"stock_data_{current_date}.csv"
     debug_filename = f"debug_stock_scrapper_{current_date}.txt"
-    df_empty = pd.DataFrame()
-    df_empty.to_excel(os.path.join(TEMP_DIR, excel_filename), index=False)
     
-    with open(os.path.join(TEMP_DIR, debug_filename), 'w') as debug_file:
+    
+    df_empty = pd.DataFrame(columns=header)
+    df_empty.to_csv(os.path.join(STOCK_RESULTS_DIR, csv_filename), index=False)
+    
+    
+    with open(os.path.join(STOCK_RESULTS_DIR, debug_filename), 'w') as debug_file:
         debug_file.write("Debug Log - Stock Scrapper\n\n")
-    push_to_github(excel_filename, '')
+    
+    
+    push_to_github(csv_filename, '')
     push_to_github(debug_filename, '')
 
-create_excel_and_debug_files()
-
+create_csv_and_debug_files()
 
 def get_perc_change(n_days, history_cls):
     temp_array = history_cls[:n_days]
@@ -135,13 +142,6 @@ def analyze_bound_stock(n_days, history_cls, history_vol):
             is_avg_check = True
     return output_const
 
-current_date = datetime.now().strftime("%d-%m-%Y")
-excel_filename = f"stock_data_{current_date}.xlsx"
-debug_filename = f"debug_stock_scrapper_{current_date}.txt"
-df_empty = pd.DataFrame()
-df_empty.to_excel(os.path.join(TEMP_DIR, excel_filename), index=False)
-with open(os.path.join(TEMP_DIR, debug_filename), 'w') as debug_file:
-    debug_file.write("Debug Log - Stock Scrapper\n\n")
 
 header = [
     'Stock', 'Market Cap and Buy Analysis', 'Buy Analysis', 'Volume Analysis Result',
@@ -154,11 +154,13 @@ header = [
     'Volume Average in 50 Days', 'Volume Average in 100 Days',
 ]
 
-with pd.ExcelWriter(os.path.join(TEMP_DIR, excel_filename), engine='openpyxl') as writer:
-    pd.DataFrame(columns=header).to_excel(writer, index=False, sheet_name='Sheet1')
 
+current_date = datetime.now().strftime("%d-%m-%Y")
+csv_filename = f"stock_data_{current_date}.csv"
+debug_filename = f"debug_stock_scrapper_{current_date}.txt"
 
 for i, stock in enumerate(stocks, start=1):
+    print("currently getting:", stock)
     for period in ['max', 'ytd', '3mo', '1mo']:
         try:
             history = yf.download(stock, period=period)
@@ -235,15 +237,13 @@ for i, stock in enumerate(stocks, start=1):
                 'Volume Average in 50 Days': vol50,
                 'Volume Average in 100 Days': vol100,
             }
-
-            
-            with pd.ExcelWriter(os.path.join(TEMP_DIR, excel_filename), engine='openpyxl', mode='a') as writer:
-                pd.DataFrame([data]).to_excel(writer, index=False, sheet_name='Sheet1', header=False, startrow=i)
+            df = pd.DataFrame([data])
+            df.to_csv(os.path.join(STOCK_RESULTS_DIR, csv_filename), mode='a', header=False, index=False)
 
         except Exception as e:
-            with open(os.path.join(TEMP_DIR, debug_filename), 'a') as debug_file:
+            with open(os.path.join(STOCK_RESULTS_DIR, debug_filename), 'a') as debug_file:
                 debug_file.write(f"Error processing {stock} with period {period}: {str(e)}\n")
 
 
-push_to_github(excel_filename, '')
+push_to_github(csv_filename, '')
 push_to_github(debug_filename, '')
