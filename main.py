@@ -1,94 +1,50 @@
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
-import yfinance as yf
 import os
+import time
+import requests
+import yfinance as yf
 import pandas as pd
 import math as m
 import csv
 from git import Repo
 from dotenv import load_dotenv
+from datetime import datetime
+from io import StringIO
 
-def load_stock_symbols(filename='stocklist.xlsx'):
-    df = pd.read_excel(filename, usecols=[1])
-    stock_symbols = df.iloc[1:].dropna().squeeze().tolist()
-    return stock_symbols
-
-all_values = load_stock_symbols()
-
-def scrape_data(url):
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    table = soup.find('table')
-    values = []
-    if table:
-        prev_value = None
-        for td in table.find_all('td'):
-            a = td.find('a', {'target': '_blank'})
-            if a:
-                current_value = a.text.strip()
-                if current_value:
-                    if current_value != prev_value:
-                        values.append(current_value)
-                    prev_value = current_value
-    return values
-
-stocks = [item + ".JK" for item in all_values]
-stock = yf.Ticker("BBCA.JK")
-historical_data = stock.history(period='1d')
-last_entry_datetime = historical_data.index[-1].strftime("%Y-%m-%d")
-current_date = last_entry_datetime
-print(current_date)
+# Load environment variables
 load_dotenv()
 GITHUB_REPO = os.getenv('_GITHUB_REPO')
 GITHUB_TOKEN = os.getenv('_GITHUB_TOKEN')
 BRANCH_NAME = os.getenv('_BRANCH_NAME')
 TEMP_DIR = os.path.join(os.getcwd(), 'repo')
+
+# Ensure the repository directory exists
 if not os.path.exists(TEMP_DIR):
     repo = Repo.clone_from(f'https://{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git', TEMP_DIR, branch=BRANCH_NAME)
 else:
     repo = Repo(TEMP_DIR)
 
-def push_to_github(filename, content):
-    """ Push a file to GitHub repository. """
-    file_path = os.path.join(TEMP_DIR, filename)
-    with open(file_path, 'w') as file:
-        file.write(content)
+# Function to load stock symbols from an Excel file
+def load_stock_symbols(filename='stocklist.xlsx'):
+    df = pd.read_excel(filename, usecols=[1])
+    stock_symbols = df.iloc[1:].dropna().squeeze().tolist()
+    return stock_symbols
 
-    repo.index.add([file_path])
-    repo.index.commit(f'Update {filename}')
-    origin = repo.remote(name='origin')
-    origin.push()
+# Load all stock symbols
+all_values = load_stock_symbols()
+stocks = [item + ".JK" for item in all_values]
 
-def create_csv_and_debug_files():
-    """ Create the necessary CSV and debug files and push them to GitHub. """
-    current_date = datetime.now().strftime("%d-%m-%Y")
-    csv_filename = f"stock_data_{current_date}.csv"
-    debug_filename = f"debug_stock_scrapper_{current_date}.txt"
-    
-    header = [
-        'Stock', 'Market Cap and Buy Analysis', 'Buy Analysis', 'Volume Analysis Result',
-        'Volume Analysis 5 Days', 'Volume Analysis 20 Days', 'Volume Analysis 50 Days',
-        'MA Analysis', 'MA5', 'MA5 Symbol', 'MA10', 'MA10 Symbol', 'MA20', 'MA20 Symbol',
-        'MA50', 'MA50 Symbol', 'MA100', 'MA100 Symbol', 'MA200', 'MA200 Symbol',
-        '3D Change%', '5D Change%', '20D Change%', 'Yesterday Closing Price', 'Current Price',
-        'Volatility in 3 Day', 'Volatility in 5 Days', 'Volatility in 20 Days',
-        'Market Cap Value', 'Volume Average in 5 Days', 'Volume Average in 20 Days',
-        'Volume Average in 50 Days', 'Volume Average in 100 Days',
-    ]
+# Function to attempt fetching stock data with fallback periods
+def fetch_stock_data(stock):
+    for period in ['max', '1y', '1mo']:
+        try:
+            history = yf.download(stock, period=period)
+            if not history.empty:
+                return history
+        except Exception as e:
+            continue
+    raise ValueError(f"Failed to fetch data for {stock}.")
 
-    with open(os.path.join(TEMP_DIR, csv_filename), mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(header)
-    
-    with open(os.path.join(TEMP_DIR, debug_filename), 'w') as debug_file:
-        debug_file.write("Debug Log - Stock Scrapper\n\n")
-
-    push_to_github(csv_filename, '')
-    push_to_github(debug_filename, '')
-
-create_csv_and_debug_files()
-
+# Calculation functions
 def get_perc_change(n_days, history_cls):
     temp_array = history_cls[:n_days]
     first_item = temp_array[0]
@@ -146,9 +102,13 @@ def analyze_bound_stock(n_days, history_cls, history_vol):
             is_avg_check = True
     return output_const
 
+# Prepare in-memory files
 current_date = datetime.now().strftime("%d-%m-%Y")
 csv_filename = f"stock_data_{current_date}.csv"
 debug_filename = f"debug_stock_scrapper_{current_date}.txt"
+csv_file = StringIO()
+debug_file = StringIO()
+
 header = [
     'Stock', 'Market Cap and Buy Analysis', 'Buy Analysis', 'Volume Analysis Result',
     'Volume Analysis 5 Days', 'Volume Analysis 20 Days', 'Volume Analysis 50 Days',
@@ -160,96 +120,102 @@ header = [
     'Volume Average in 50 Days', 'Volume Average in 100 Days',
 ]
 
-with open(os.path.join(TEMP_DIR, csv_filename), mode='w', newline='') as file:
-    writer = csv.writer(file)
-    writer.writerow(header)
+# Write the header to the CSV
+csv_writer = csv.DictWriter(csv_file, fieldnames=header)
+csv_writer.writeheader()
 
-for i, stock in enumerate(stocks, start=1):
-    print("currently getting:", stock)
-    for period in ['max', 'ytd', '3mo', '1mo']:
-        try:
-            history = yf.download(stock, period=period)
-            if len(history) == 0:
-                raise ValueError(f"No data for {stock} with period {period}")
+# Process each stock
+for stock in stocks:
+    print(f"Currently processing: {stock}")
+    try:
+        history = fetch_stock_data(stock)
+        stock_data = yf.Ticker(stock)
+        info = stock_data.info
+        history_cls = history['Close'].tolist()[::-1]
+        history_vol = history['Volume'].tolist()[::-1]
 
-            stock_data = yf.Ticker(stock)
-            info = stock_data.info
-            history_cls = history['Close'].tolist()[::-1]
-            history_vol = history['Volume'].tolist()[::-1]
+        perc3 = get_perc_change(3, history_cls)
+        perc5 = get_perc_change(5, history_cls)
+        perc20 = get_perc_change(20, history_cls)
 
-            perc3 = get_perc_change(3, history_cls)
-            perc5 = get_perc_change(5, history_cls)
-            perc20 = get_perc_change(20, history_cls)
+        vola3 = get_volas(3, history_cls)
+        vola5 = get_volas(5, history_cls)
+        vola20 = get_volas(20, history_cls)
 
-            vola3 = get_volas(3, history_cls)
-            vola5 = get_volas(5, history_cls)
-            vola20 = get_volas(20, history_cls)
+        vol5 = get_avg_vol(5, history_vol)
+        vol20 = get_avg_vol(20, history_vol)
+        vol50 = get_avg_vol(50, history_vol)
+        vol100 = get_avg_vol(100, history_vol)
 
-            vol5 = get_avg_vol(5, history_vol)
-            vol20 = get_avg_vol(20, history_vol)
-            vol50 = get_avg_vol(50, history_vol)
-            vol100 = get_avg_vol(100, history_vol)
+        ma5 = get_ma(5, history_cls)
+        ma10 = get_ma(10, history_cls)
+        ma20 = get_ma(20, history_cls)
+        ma50 = get_ma(50, history_cls)
+        ma100 = get_ma(100, history_cls)
+        ma200 = get_ma(200, history_cls)
 
-            ma5 = get_ma(5, history_cls)
-            ma10 = get_ma(10, history_cls)
-            ma20 = get_ma(20, history_cls)
-            ma50 = get_ma(50, history_cls)
-            ma100 = get_ma(100, history_cls)
-            ma200 = get_ma(200, history_cls)
+        display_ma, ma_const = calculate_display_ma(ma5, ma10, ma20, ma50, ma100, ma200, history_cls[0])
 
-            display_ma, ma_const = calculate_display_ma(ma5, ma10, ma20, ma50, ma100, ma200, history_cls[0])
+        volume_const5 = analyze_bound_stock(5, history_cls, history_vol)
+        volume_const20 = analyze_bound_stock(20, history_cls, history_vol)
+        volume_const50 = analyze_bound_stock(50, history_cls, history_vol)
 
-            volume_const5 = analyze_bound_stock(5, history_cls, history_vol)
-            volume_const20 = analyze_bound_stock(20, history_cls, history_vol)
-            volume_const50 = analyze_bound_stock(50, history_cls, history_vol)
+        market_cap = info.get('marketCap', 'N/A')
+        if market_cap != 'N/A':
+            market_cap = '{:.2f}T'.format(market_cap / 1e12) if market_cap > 1e12 else '{:.2f}B'.format(market_cap / 1e9)
 
-            market_cap = info.get('marketCap', 'N/A')
-            if market_cap != 'N/A':
-                market_cap = '{:.2f}T'.format(market_cap / 1e12) if market_cap > 1e12 else '{:.2f}B'.format(market_cap / 1e9)
+        data = {
+            'Stock': stock,
+            'Market Cap and Buy Analysis': market_cap,
+            'Buy Analysis': ma_const,
+            'Volume Analysis Result': volume_const50,
+            'Volume Analysis 5 Days': volume_const5,
+            'Volume Analysis 20 Days': volume_const20,
+            'Volume Analysis 50 Days': volume_const50,
+            'MA Analysis': display_ma,
+            'MA5': ma5,
+            'MA5 Symbol': display_ma[0],
+            'MA10': ma10,
+            'MA10 Symbol': display_ma[1],
+            'MA20': ma20,
+            'MA20 Symbol': display_ma[2],
+            'MA50': ma50,
+            'MA50 Symbol': display_ma[3],
+            'MA100': ma100,
+            'MA100 Symbol': display_ma[4],
+            'MA200': ma200,
+            'MA200 Symbol': display_ma[5],
+            '3D Change%': perc3,
+            '5D Change%': perc5,
+            '20D Change%': perc20,
+            'Yesterday Closing Price': history_cls[1],
+            'Current Price': history_cls[0],
+            'Volatility in 3 Day': vola3,
+            'Volatility in 5 Days': vola5,
+            'Volatility in 20 Days': vola20,
+            'Market Cap Value': market_cap,
+            'Volume Average in 5 Days': vol5,
+            'Volume Average in 20 Days': vol20,
+            'Volume Average in 50 Days': vol50,
+            'Volume Average in 100 Days': vol100,
+        }
 
-            data = {
-                'Stock': stock,
-                'Market Cap and Buy Analysis': market_cap,
-                'Buy Analysis': ma_const,
-                'Volume Analysis Result': volume_const50,
-                'Volume Analysis 5 Days': volume_const5,
-                'Volume Analysis 20 Days': volume_const20,
-                'Volume Analysis 50 Days': volume_const50,
-                'MA Analysis': display_ma,
-                'MA5': ma5,
-                'MA5 Symbol': display_ma[0],
-                'MA10': ma10,
-                'MA10 Symbol': display_ma[1],
-                'MA20': ma20,
-                'MA20 Symbol': display_ma[2],
-                'MA50': ma50,
-                'MA50 Symbol': display_ma[3],
-                'MA100': ma100,
-                'MA100 Symbol': display_ma[4],
-                'MA200': ma200,
-                'MA200 Symbol': display_ma[5],
-                '3D Change%': perc3,
-                '5D Change%': perc5,
-                '20D Change%': perc20,
-                'Yesterday Closing Price': history_cls[1],
-                'Current Price': history_cls[0],
-                'Volatility in 3 Day': vola3,
-                'Volatility in 5 Days': vola5,
-                'Volatility in 20 Days': vola20,
-                'Market Cap Value': market_cap,
-                'Volume Average in 5 Days': vol5,
-                'Volume Average in 20 Days': vol20,
-                'Volume Average in 50 Days': vol50,
-                'Volume Average in 100 Days': vol100,
-            }
+        csv_writer.writerow(data)
 
-            with open(os.path.join(TEMP_DIR, csv_filename), mode='a', newline='') as file:
-                writer = csv.DictWriter(file, fieldnames=header)
-                writer.writerow(data)
+    except Exception as e:
+        debug_file.write(f"Error processing {stock}: {str(e)}\n")
 
-        except Exception as e:
-            with open(os.path.join(TEMP_DIR, debug_filename), 'a') as debug_file:
-                debug_file.write(f"Error processing {stock} with period {period}: {str(e)}\n")
+# Write the CSV and debug file contents to the repository
+def push_to_github(filename, content):
+    """ Push a file to GitHub repository. """
+    file_path = os.path.join(TEMP_DIR, filename)
+    with open(file_path, 'w') as file:
+        file.write(content.getvalue())
 
-push_to_github(csv_filename, '')
-push_to_github(debug_filename, '')
+    repo.index.add([file_path])
+    repo.index.commit(f'Update {filename}')
+    origin = repo.remote(name='origin')
+    origin.push()
+
+push_to_github(csv_filename, csv_file)
+push_to_github(debug_filename, debug_file)
