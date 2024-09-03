@@ -5,12 +5,13 @@ import yfinance as yf
 import os
 import pandas as pd
 import math as m
+import csv
 from git import Repo
 from dotenv import load_dotenv
 
 def load_stock_symbols(filename='stocklist.xlsx'):
-    df = pd.read_excel(filename, usecols=[1])  
-    stock_symbols = df.iloc[1:].dropna().squeeze().tolist()  
+    df = pd.read_excel(filename, usecols=[1])
+    stock_symbols = df.iloc[1:].dropna().squeeze().tolist()
     return stock_symbols
 
 all_values = load_stock_symbols()
@@ -38,25 +39,19 @@ historical_data = stock.history(period='1d')
 last_entry_datetime = historical_data.index[-1].strftime("%Y-%m-%d")
 current_date = last_entry_datetime
 print(current_date)
-
 load_dotenv()
 GITHUB_REPO = os.getenv('_GITHUB_REPO')
 GITHUB_TOKEN = os.getenv('_GITHUB_TOKEN')
 BRANCH_NAME = os.getenv('_BRANCH_NAME')
-
-
-STOCK_RESULTS_DIR = os.path.join(os.getcwd(), 'repo', 'stockresults')  
-if not os.path.exists(STOCK_RESULTS_DIR):
-    os.makedirs(STOCK_RESULTS_DIR)
-
-if not os.path.exists(os.path.join(os.getcwd(), 'repo')):
-    repo = Repo.clone_from(f'https://{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git', os.path.join(os.getcwd(), 'repo'), branch=BRANCH_NAME)
+TEMP_DIR = os.path.join(os.getcwd(), 'repo')
+if not os.path.exists(TEMP_DIR):
+    repo = Repo.clone_from(f'https://{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git', TEMP_DIR, branch=BRANCH_NAME)
 else:
-    repo = Repo(os.path.join(os.getcwd(), 'repo'))
+    repo = Repo(TEMP_DIR)
 
 def push_to_github(filename, content):
     """ Push a file to GitHub repository. """
-    file_path = os.path.join(STOCK_RESULTS_DIR, filename)
+    file_path = os.path.join(TEMP_DIR, filename)
     with open(file_path, 'w') as file:
         file.write(content)
 
@@ -66,20 +61,29 @@ def push_to_github(filename, content):
     origin.push()
 
 def create_csv_and_debug_files():
-    """ Create the necessary files and push them to GitHub. """
+    """ Create the necessary CSV and debug files and push them to GitHub. """
     current_date = datetime.now().strftime("%d-%m-%Y")
     csv_filename = f"stock_data_{current_date}.csv"
     debug_filename = f"debug_stock_scrapper_{current_date}.txt"
     
+    header = [
+        'Stock', 'Market Cap and Buy Analysis', 'Buy Analysis', 'Volume Analysis Result',
+        'Volume Analysis 5 Days', 'Volume Analysis 20 Days', 'Volume Analysis 50 Days',
+        'MA Analysis', 'MA5', 'MA5 Symbol', 'MA10', 'MA10 Symbol', 'MA20', 'MA20 Symbol',
+        'MA50', 'MA50 Symbol', 'MA100', 'MA100 Symbol', 'MA200', 'MA200 Symbol',
+        '3D Change%', '5D Change%', '20D Change%', 'Yesterday Closing Price', 'Current Price',
+        'Volatility in 3 Day', 'Volatility in 5 Days', 'Volatility in 20 Days',
+        'Market Cap Value', 'Volume Average in 5 Days', 'Volume Average in 20 Days',
+        'Volume Average in 50 Days', 'Volume Average in 100 Days',
+    ]
+
+    with open(os.path.join(TEMP_DIR, csv_filename), mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(header)
     
-    df_empty = pd.DataFrame(columns=header)
-    df_empty.to_csv(os.path.join(STOCK_RESULTS_DIR, csv_filename), index=False)
-    
-    
-    with open(os.path.join(STOCK_RESULTS_DIR, debug_filename), 'w') as debug_file:
+    with open(os.path.join(TEMP_DIR, debug_filename), 'w') as debug_file:
         debug_file.write("Debug Log - Stock Scrapper\n\n")
-    
-    
+
     push_to_github(csv_filename, '')
     push_to_github(debug_filename, '')
 
@@ -142,7 +146,9 @@ def analyze_bound_stock(n_days, history_cls, history_vol):
             is_avg_check = True
     return output_const
 
-
+current_date = datetime.now().strftime("%d-%m-%Y")
+csv_filename = f"stock_data_{current_date}.csv"
+debug_filename = f"debug_stock_scrapper_{current_date}.txt"
 header = [
     'Stock', 'Market Cap and Buy Analysis', 'Buy Analysis', 'Volume Analysis Result',
     'Volume Analysis 5 Days', 'Volume Analysis 20 Days', 'Volume Analysis 50 Days',
@@ -154,10 +160,9 @@ header = [
     'Volume Average in 50 Days', 'Volume Average in 100 Days',
 ]
 
-
-current_date = datetime.now().strftime("%d-%m-%Y")
-csv_filename = f"stock_data_{current_date}.csv"
-debug_filename = f"debug_stock_scrapper_{current_date}.txt"
+with open(os.path.join(TEMP_DIR, csv_filename), mode='w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(header)
 
 for i, stock in enumerate(stocks, start=1):
     print("currently getting:", stock)
@@ -237,13 +242,14 @@ for i, stock in enumerate(stocks, start=1):
                 'Volume Average in 50 Days': vol50,
                 'Volume Average in 100 Days': vol100,
             }
-            df = pd.DataFrame([data])
-            df.to_csv(os.path.join(STOCK_RESULTS_DIR, csv_filename), mode='a', header=False, index=False)
+
+            with open(os.path.join(TEMP_DIR, csv_filename), mode='a', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=header)
+                writer.writerow(data)
 
         except Exception as e:
-            with open(os.path.join(STOCK_RESULTS_DIR, debug_filename), 'a') as debug_file:
+            with open(os.path.join(TEMP_DIR, debug_filename), 'a') as debug_file:
                 debug_file.write(f"Error processing {stock} with period {period}: {str(e)}\n")
-
 
 push_to_github(csv_filename, '')
 push_to_github(debug_filename, '')
