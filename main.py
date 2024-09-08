@@ -162,6 +162,13 @@ for stock in stocks:
 
         market_cap = info.get('marketCap', 'N/A')
         if market_cap != 'N/A':
+            if isinstance(market_cap, str) and market_cap.endswith('B'):
+                market_cap = float(market_cap[:-1]) * 1e9
+            elif isinstance(market_cap, str) and market_cap.endswith('T'):
+                market_cap = float(market_cap[:-1]) * 1e12
+            else:
+                market_cap = float(market_cap)
+
             market_cap = '{:.2f}T'.format(market_cap / 1e12) if market_cap > 1e12 else '{:.2f}B'.format(market_cap / 1e9)
 
         data = {
