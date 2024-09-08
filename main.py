@@ -169,8 +169,6 @@ for stock in stocks:
             else:
                 market_cap = float(market_cap)
 
-            market_cap = '{:.2f}T'.format(market_cap / 1e12) if market_cap > 1e12 else '{:.2f}B'.format(market_cap / 1e9)
-
         data = {
             'Stock': stock,
             'Market Cap and Buy Analysis': market_cap,
