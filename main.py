@@ -10,30 +10,24 @@ from dotenv import load_dotenv
 from datetime import datetime
 from io import StringIO
 
-# Load environment variables
 load_dotenv()
 GITHUB_REPO = os.getenv('_GITHUB_REPO')
 GITHUB_TOKEN = os.getenv('_GITHUB_TOKEN')
 BRANCH_NAME = os.getenv('_BRANCH_NAME')
 TEMP_DIR = os.path.join(os.getcwd(), 'repo')
-
-# Ensure the repository directory exists
 if not os.path.exists(TEMP_DIR):
     repo = Repo.clone_from(f'https://{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git', TEMP_DIR, branch=BRANCH_NAME)
 else:
     repo = Repo(TEMP_DIR)
 
-# Function to load stock symbols from an Excel file
 def load_stock_symbols(filename='stocklist.xlsx'):
     df = pd.read_excel(filename, usecols=[1])
     stock_symbols = df.iloc[1:].dropna().squeeze().tolist()
     return stock_symbols
 
-# Load all stock symbols
 all_values = load_stock_symbols()
 stocks = [item + ".JK" for item in all_values]
 
-# Function to attempt fetching stock data with fallback periods
 def fetch_stock_data(stock):
     for period in ['max', '1y', '1mo']:
         try:
@@ -44,7 +38,6 @@ def fetch_stock_data(stock):
             continue
     raise ValueError(f"Failed to fetch data for {stock}.")
 
-# Calculation functions
 def get_perc_change(n_days, history_cls):
     temp_array = history_cls[:n_days]
     first_item = temp_array[0]
@@ -102,7 +95,6 @@ def analyze_bound_stock(n_days, history_cls, history_vol):
             is_avg_check = True
     return output_const
 
-# Prepare in-memory files
 current_date = datetime.now().strftime("%d-%m-%Y")
 csv_filename = f"stock_data_{current_date}.csv"
 debug_filename = f"debug_stock_scrapper_{current_date}.txt"
@@ -120,11 +112,9 @@ header = [
     'Volume Average in 50 Days', 'Volume Average in 100 Days',
 ]
 
-# Write the header to the CSV
 csv_writer = csv.DictWriter(csv_file, fieldnames=header)
 csv_writer.writeheader()
 
-# Process each stock
 for stock in stocks:
     print(f"Currently processing: {stock}")
     try:
@@ -206,13 +196,10 @@ for stock in stocks:
         }
 
         csv_writer.writerow(data)
-
     except Exception as e:
         debug_file.write(f"Error processing {stock}: {str(e)}\n")
 
-# Write the CSV and debug file contents to the repository
 def push_to_github(filename, content):
-    """ Push a file to GitHub repository. """
     file_path = os.path.join(TEMP_DIR, filename)
     with open(file_path, 'w') as file:
         file.write(content.getvalue())
